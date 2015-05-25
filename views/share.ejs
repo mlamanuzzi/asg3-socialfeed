@@ -28,7 +28,7 @@
 
     <div class="row well">
 
-        <div class="col-xs-1">
+        <div class="col-med-1">
             <img src="<%= post.image %>"/>
         </div>
         <div class="col-lg-11">
@@ -43,7 +43,7 @@
     </div>
 
     <div class="row">
-        <form action="/share/<%= post.id %>" method="POST">
+        <form action="/share/<%= post.network %>/<%= post.id %>" method="POST">
             <div class="form-group">
                 <textarea name="share" class="form-control" rows="3" placeholder="Add a personal message..."></textarea>
             </div>

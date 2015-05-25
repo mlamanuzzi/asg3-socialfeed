@@ -1,28 +1,13 @@
-// FACEBOOK API
-// "actions": [
-//   {
-//     "name": "Comment",
-//     "link": "https://www.facebook.com/10152790711117595/posts/10152791246797595"
-//   },
-//   {
-//     "name": "Like",
-//     "link": "https://www.facebook.com/10152790711117595/posts/10152791246797595"
-//   }
-// ],
+var isLoggedIn = require('./middlewares/isLoggedIn')
+var _ = require('lodash')
+var Twitter = require('twitter')
+var TwitterStream = require('node-tweet-stream')
+var Facebook = require('facebook-node-sdk')
+var then = require('express-then')
+var rp = require('request-promise')
+var fs = require('fs')
 
-let isLoggedIn = require('./middlewares/isLoggedIn')
-let _ = require('lodash')
-let Twitter = require('twitter')
-let Facebook = require('facebook-node-sdk')
-let then = require('express-then')
-let rp = require('request-promise')
-let fs = require('fs')
-  // let google = require('googleapis');
-  // let plus = google.plus('v1');
-  // let OAuth2 = google.auth.OAuth2;
-
-// let posts = require('../data/posts')
-let networks = {
+var networks = {
   twitter: {
     icon: 'twitter',
     name: 'Twitter',
@@ -40,15 +25,15 @@ let networks = {
   }
 }
 module.exports = (app) => {
-  let passport = app.passport
-  let twitterConfig = app.config.auth.twitter
-  let facebookConfig = app.config.auth.facebook
-  let googleConfig = app.config.auth.google
+  var passport = app.passport
+  var twitterConfig = app.config.auth.twitter
+  var facebookConfig = app.config.auth.facebook
+  var googleConfig = app.config.auth.google
 
   // Scope specifies the desired data fields from the user account
-  let twitterScope = 'email'
-  let facebookScope = ['read_stream', 'email']
-  let googleScope = ['email', 'profile']
+  var twitterScope = 'email'
+  var facebookScope = ['email, user_posts, read_stream, user_likes, publish_actions']
+  var googleScope = ['email', 'profile']
 
   // Authentication route & Callback URL
   app.get('/auth/facebook', passport.authenticate('facebook', {
@@ -72,46 +57,47 @@ module.exports = (app) => {
   }))
 
   app.get('/timeline', isLoggedIn, then(async(req, res) => {
+    console.log(req.user)
+    // figure out which social networks to pull data from
+    var fb = (req.user.facebook) ? true : false
+    var twitter = (req.user.twitter) ? true : false
+    var allPosts = []
     try {
-      let twitterClient = new Twitter({
-        consumer_key: twitterConfig.consumerKey,
-        consumer_secret: twitterConfig.consumerSecret,
-        access_token_key: req.user.twitter.token,
-        access_token_secret: req.user.twitter.secret
-      })
-
-
-      let response = await rp({
+      var response = await rp({
         uri: `https://graph.facebook.com/me/home/?access_token=${req.user.facebook.token}`,
         resolveWithFullResponse: true
       })
 
-
-      let fbData = JSON.parse(response.body)
-
-      await fs.promise.writeFile('/Users/mlamanu/Desktop/fbdata.json', JSON.stringify(fbData))
-
+      var fbData = JSON.parse(response.body)
       var fbPosts = []
-      for (let i = 0; i < fbData.data.length; i++) {
-        fbPosts.push({
+      for (var i = 0; i < fbData.data.length; i++) {
+        var liked = false
+        if (fbData.data[i].likes) {
+          for (var j = 0; j < fbData.data[i].likes.data.length; j++) {
+            if (fbData.data[i].likes.data[j].id == req.user.facebook.id) {
+              liked = true
+            }
+          }
+        }
+        allPosts.push({
           id: fbData.data[i].id,
           image: fbData.data[i].picture,
           text: fbData.data[i].description,
           name: fbData.data[i].from.name,
           timestamp: new Date(fbData.data[i].created_time).getTime(),
           // username: fbData.data[i].,
-          // liked: fbData.data[i].,
+          liked: liked,
           network: networks.facebook
         })
       }
 
-      console.log(fbPosts)
-
-      let [tweets] = await twitterClient.promise.get('/statuses/home_timeline')
-
-      await fs.promise.writeFile('/Users/mlamanu/Desktop/tweets.json', JSON.stringify(tweets))
-
-
+      var twitterClient = new Twitter({
+        consumer_key: twitterConfig.consumerKey,
+        consumer_secret: twitterConfig.consumerSecret,
+        access_token_key: req.user.twitter.token,
+        access_token_secret: req.user.twitter.secret
+      })
+      var [tweets] = await twitterClient.promise.get('/statuses/home_timeline')
 
       tweets = tweets.map(tweet => {
         return {
@@ -126,19 +112,9 @@ module.exports = (app) => {
         }
       })
 
-      // console.log(tweets)
-
-
-
-      // let timestamps = []
-      // for (let i=0; i<fbPosts.length; i++) {
-      //   timestamps.push({})
-
-      // }
-
-
-
-      let allPosts = tweets.concat(fbPosts)
+      _.forEach(tweets, function(n, key) {
+        allPosts.push(n)
+      });
 
       res.render('timeline.ejs', {
         posts: allPosts
@@ -146,7 +122,6 @@ module.exports = (app) => {
     } catch (e) {
       console.log(e)
     }
-
   }))
 
   // Authentication route & Callback URL
@@ -196,21 +171,18 @@ module.exports = (app) => {
   })
 
   app.post('/compose', isLoggedIn, then(async(req, res) => {
-
-
-
-    let fb = req.body.facebook
-    let twitter = req.body.twitter
+    var fb = req.body.facebook
+    var twitter = req.body.twitter
 
     if (twitter == 'on') {
       try {
-        let twitterClient = new Twitter({
+        var twitterClient = new Twitter({
           consumer_key: twitterConfig.consumerKey,
           consumer_secret: twitterConfig.consumerSecret,
           access_token_key: req.user.twitter.token,
           access_token_secret: req.user.twitter.secret
         })
-        let text = req.body.text
+        var text = req.body.text
         if (text.length > 140) {
           return req.flash('error', 'Status is over 140 chars!')
         }
@@ -220,50 +192,43 @@ module.exports = (app) => {
         await twitterClient.promise.post('statuses/update', {
           status: text
         })
-        res.redirect('/timeline')
-
       } catch (e) {
         console.log(e)
       }
     }
     if (fb == 'on') {
       try {
-        console.log('REQ.USER.FACEBOOK.ID ====', req.user.facebook.id)
-        let message = req.body.text
-        let response = await rp({
-            uri: `https://graph.facebook.com/${req.user.facebook.id}/feed/?message=${message}&access_token=${req.user.facebook.token}`,
-            resolveWithFullResponse: true
-          })
-          // console.log(response)
+        var message = req.body.text
+        var response = await rp({
+          uri: `https://graph.facebook.com/${req.user.facebook.id}/feed/?message=${message}&access_token=${req.user.facebook.token}`,
+          method: 'POST',
+          resolveWithFullResponse: true
+        })
       } catch (e) {
         console.log(e)
       }
     }
 
-    res.end()
+    res.redirect('/timeline')
   }))
 
   app.post('/like/:platform/:id', isLoggedIn, then(async(req, res) => {
-    console.log('PLATFORM = ', req.params.platform)
-    console.log('ID       = ', req.params.id)
     switch (req.params.platform.toLowerCase()) {
       case 'facebook':
-        console.log('this happened....')
-        let response = await rp({
-            uri: `https://graph.facebook.com/v2.3/${req.params.id}/likes&access_token=${req.user.facebook.token}`,
-            resolveWithFullResponse: true,
-            method: 'POST'
-          })
-          // POST /v2.3/{object-id}/likes HTTP/1.1
+        var response = await rp({
+          uri: `https://graph.facebook.com/${req.params.id}/likes?access_token=${req.user.facebook.token}`,
+          resolveWithFullResponse: true,
+          method: 'POST'
+        })
         break;
       case 'twitter':
-        let twitterClient = new Twitter({
+        var twitterClient = new Twitter({
           consumer_key: twitterConfig.consumerKey,
           consumer_secret: twitterConfig.consumerSecret,
           access_token_key: req.user.twitter.token,
           access_token_secret: req.user.twitter.secret
         })
-        let id = req.params.id
+        var id = req.params.id
         await twitterClient.promise.post('favorites/create', {
           id
         })
@@ -277,41 +242,52 @@ module.exports = (app) => {
       case 'facebook':
         break;
       case 'twitter':
-        let twitterClient = new Twitter({
+        var twitterClient = new Twitter({
           consumer_key: twitterConfig.consumerKey,
           consumer_secret: twitterConfig.consumerSecret,
           access_token_key: req.user.twitter.token,
           access_token_secret: req.user.twitter.secret
         })
-        let id = req.params.id
+        var id = req.params.id
         await twitterClient.promise.post('favorites/destroy', {
           id
         })
         break;
-
     }
-
     res.end()
   }))
 
-
-
   app.get('/share/:platform/:id', isLoggedIn, then(async(req, res) => {
     // get post from id
-
+    var id = req.params.id
     switch (req.params.platform.toLowerCase()) {
       case 'facebook':
+        var response = await rp({
+          uri: `https://graph.facebook.com/${id}/?access_token=${req.user.facebook.token}`,
+          resolveWithFullResponse: true,
+        })
 
+        let post = JSON.parse(response.body)
+        res.render('share.ejs', {
+          post: {
+            id: id,
+            image: post.picture,
+            text: post.story,
+            username: post.from.id,
+            name: post.from.name,
+            network: req.params.platform.toLowerCase()
+          }
+        })
         break;
       case 'twitter':
-        let twitterClient = new Twitter({
+        var twitterClient = new Twitter({
           consumer_key: twitterConfig.consumerKey,
           consumer_secret: twitterConfig.consumerSecret,
           access_token_key: req.user.twitter.token,
           access_token_secret: req.user.twitter.secret
         })
-        let id = req.params.id
-        let post = await twitterClient.promise.get('statuses/show', {
+        var id = req.params.id
+        var post = await twitterClient.promise.get('statuses/show', {
           id
         })
         res.render('share.ejs', {
@@ -328,53 +304,54 @@ module.exports = (app) => {
     }
   }))
 
+  app.post('/share/:network/:id', isLoggedIn, then(async(req, res) => {
+    var network = req.params.network
+    var id = req.params.id
+    try {
+      switch (network.toLowerCase()) {
+        case 'twitter':
+          var twitterClient = new Twitter({
+            consumer_key: twitterConfig.consumerKey,
+            consumer_secret: twitterConfig.consumerSecret,
+            access_token_key: req.user.twitter.token,
+            access_token_secret: req.user.twitter.secret
+          })
+          var retweet = req.body.share
 
-  app.post('/share/:id?', isLoggedIn, then(async(req, res) => {
-
-    switch (req.body.network.toLowerCase()) {
-      case 'twitter':
-        let id = req.params.id
-        let twitterClient = new Twitter({
-          consumer_key: twitterConfig.consumerKey,
-          consumer_secret: twitterConfig.consumerSecret,
-          access_token_key: req.user.twitter.token,
-          access_token_secret: req.user.twitter.secret
-        })
-
-        console.log('req.body ==========')
-        console.log(req.body)
-        let retweet = req.body.share
-
-        console.log('ID ====')
-        console.log(id)
-        await twitterClient.promise.post('statuses/retweet', {
-          id: id
-        })
-        break;
-      case 'facebook':
-        break;
+          var response = await twitterClient.promise.post('statuses/retweet/' + id)
+          console.log(response)
+          break;
+        case 'facebook':
+          var response = await rp({
+            uri: `https://graph.facebook.com/${id}/?access_token=${req.user.facebook.token}`,
+            resolveWithFullResponse: true,
+          })
+          var post = JSON.parse(response.body)
+          var link = post.link
+          var response = await rp({
+            uri: `https://graph.facebook.com/me/feed/link=${link}/?access_token=${req.user.facebook.token}`,
+            method: 'POST',
+            resolveWithFullResponse: true,
+          })
+          break;
+      }
+    } catch (e) {
+      console.log(e)
     }
-
-
     res.redirect('/timeline')
-
-
   }))
-
-
 
   app.post('/reply/:network/:id?', isLoggedIn, then(async(req, res) => {
     var id = req.params.id
     switch (req.params.network.toLowerCase()) {
       case 'twitter':
-      console.log('THIS HAPPENED!!!! POST')
-        let twitterClient = new Twitter({
+        var twitterClient = new Twitter({
           consumer_key: twitterConfig.consumerKey,
           consumer_secret: twitterConfig.consumerSecret,
           access_token_key: req.user.twitter.token,
           access_token_secret: req.user.twitter.secret
         })
-        let text = '@' + req.user.twitter.username + ' ' + req.body.reply
+        var text = '@' + req.user.twitter.username + ' ' + req.body.reply
         if (text.length > 140) {
           return req.flash('error', 'Status is over 140 chars!')
         }
@@ -387,42 +364,62 @@ module.exports = (app) => {
         })
         break;
       case 'facebook':
+        var response = await rp({
+          uri: `https://graph.facebook.com/${id}/comments?access_token=${req.user.facebook.token}`,
+          message: req.body.reply,
+          resolveWithFullResponse: true,
+          method: 'POST'
+        })
         break;
     }
     res.redirect('/timeline')
   }))
 
   app.get('/reply/:network/:id?', isLoggedIn, then(async(req, res) => {
-    let network = req.params.network.toLowerCase()
+    var network = req.params.network.toLowerCase()
     switch (network) {
       case 'twitter':
-      console.log('TWITTER!!!!')
-        let twitterClient = new Twitter({
+        var twitterClient = new Twitter({
           consumer_key: twitterConfig.consumerKey,
           consumer_secret: twitterConfig.consumerSecret,
           access_token_key: req.user.twitter.token,
           access_token_secret: req.user.twitter.secret
         })
-        let post = await twitterClient.promise.get('statuses/show', {
+        var post = await twitterClient.promise.get('statuses/show', {
           id: req.params.id,
+        })
+        var username = (network === 'twitter') ? '@' + post[0].user.screen_name : post[0].user.screen_name
+
+        res.render('reply.ejs', {
+          post: {
+            id: req.params.id,
+            image: post[0].user.profile_image_url,
+            text: post[0].text,
+            username: username,
+            name: post[0].user.name,
+            network: network
+          }
         })
         break;
       case 'facebook':
+        var response = await rp({
+          uri: `https://graph.facebook.com/${req.params.id}?access_token=${req.user.facebook.token}`,
+          method: 'GET',
+          resolveWithFullResponse: true
+        })
+        var fRes = JSON.parse(response.body)
+        res.render('reply.ejs', {
+          post: {
+            id: req.params.id,
+            image: fRes.picture,
+            text: fRes.message,
+            username: fRes.from.name,
+            name: fRes.from.name,
+            network: network
+          }
+        })
         break;
     }
-
-    let username = (network === 'twitter') ? '@' + post[0].user.screen_name : post[0].user.screen_name
-
-    res.render('reply.ejs', {
-      post: {
-        id: req.params.id,
-        image: post[0].user.profile_image_url,
-        text: post[0].text,
-        username: username,
-        name: post[0].user.name,
-        network: network
-      }
-    })
   }))
 
   app.get('/', (req, res) => res.render('index.ejs'))
@@ -459,7 +456,7 @@ module.exports = (app) => {
 
   app.post('/signup', passport.authenticate('local-signup', {
     successRedirect: '/profile',
-    failureRedirect: '/',
+    failureRedirect: '/signup',
     failureFlash: true
   }))
 }

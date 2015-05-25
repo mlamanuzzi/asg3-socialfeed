@@ -10,7 +10,6 @@ require('songbird')
 
 const SALT = bcrypt.genSaltSync(10)
 
-
 function useExternalPassportStrategy(OauthStrategy, config, field) {
   config.passReqToCallback = true
 
@@ -19,18 +18,6 @@ function useExternalPassportStrategy(OauthStrategy, config, field) {
   })))
 
   async function authCB(req, token, _ignored_, account) {
-
-
-    console.log('ACCOUNT ---------')
-    console.log(account)
-    console.log('</account>--------')
-    console.log(token)
-    console.log('ignored======')
-    console.log(_ignored_)
-    // console.log(req)
-
-
-
     if (req.user) {
           let user = await User.promise.findOne({
       'local.email': req.user.local.email
@@ -65,7 +52,6 @@ function useExternalPassportStrategy(OauthStrategy, config, field) {
       }
     } else {
       // !req.user
-      
       //Create the user if none loaded from the database
       //Link the account with the user?
       let dbField = field + '.id'
@@ -103,11 +89,8 @@ function useExternalPassportStrategy(OauthStrategy, config, field) {
         await user.save()
         return user
       }
-
-      
       // 3a. If user exists, we're logging in via the 3rd party account
       // 3b. Otherwise create a user associated with the 3rd party account
-
     }
   }
 }
@@ -168,17 +151,6 @@ function configure(config) {
     failureFlash: true,
     passReqToCallback: true
   }, nodeifyit(async(req, email, password, callback) => {
-
-
-
-    // TODO: IS this working? can you still create another account with the same email?????
-
-  //
-  //
-  //
-  //
-  //
-
 
     email = (email || '').toLowerCase()
       // Is the email taken?
